@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GitHub MCP Server — Preview Console</title>
+    <style>
+      :root {
+        --bg: #ffffff;
+        --bg-muted: #f6f8fa;
+        --border: #d1d9e0;
+        --fg: #1f2328;
+        --fg-muted: #59636e;
+        --accent: #0969da;
+        --accent-fg: #ffffff;
+        --success: #1a7f37;
+        --danger: #cf222e;
+        --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0d1117;
+          --bg-muted: #151b23;
+          --border: #3d444d;
+          --fg: #f0f6fc;
+          --fg-muted: #9198a1;
+          --accent: #4493f8;
+          --accent-fg: #0d1117;
+          --success: #3fb950;
+          --danger: #f85149;
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 24px 16px 64px;
+        background: var(--bg);
+        color: var(--fg);
+        font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+      }
+      main { max-width: 880px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+      header { max-width: 880px; margin: 0 auto 20px; }
+      h1 { font-size: 20px; margin: 0 0 4px; font-weight: 600; }
+      h2 { font-size: 15px; margin: 0 0 12px; font-weight: 600; }
+      .sub { margin: 0; color: var(--fg-muted); font-size: 13px; }
+      code { font-family: var(--mono); font-size: 0.92em; }
+      .pill {
+        display: inline-block;
+        margin-top: 8px;
+        padding: 2px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: var(--bg-muted);
+        font-size: 12px;
+        color: var(--fg-muted);
+      }
+      .pill.ok { color: var(--success); border-color: var(--success); }
+      .pill.err { color: var(--danger); border-color: var(--danger); }
+      .card {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--bg);
+        padding: 16px;
+      }
+      dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0; font-size: 13px; }
+      dt { color: var(--fg-muted); }
+      dd { margin: 0; overflow-wrap: anywhere; }
+      .list { list-style: none; margin: 0; padding: 0; max-height: 320px; overflow: auto; }
+      .list li { padding: 8px 0; border-top: 1px solid var(--border); font-size: 13px; }
+      .list li:first-child { border-top: 0; }
+      .list .name { font-family: var(--mono); font-weight: 600; }
+      .list .desc { color: var(--fg-muted); display: block; margin-top: 2px; }
+      .count { color: var(--fg-muted); font-weight: 400; }
+      input[type="text"], input[type="password"], select, textarea {
+        width: 100%;
+        margin-top: 4px;
+        padding: 6px 10px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--bg-muted);
+        color: var(--fg);
+        font: inherit;
+      }
+      textarea { font-family: var(--mono); font-size: 12px; resize: vertical; }
+      label { display: block; margin-bottom: 12px; font-size: 13px; font-weight: 500; }
+      button {
+        padding: 6px 14px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--accent);
+        color: var(--accent-fg);
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button:disabled { opacity: 0.6; cursor: default; }
+      pre {
+        margin: 12px 0 0;
+        padding: 12px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--bg-muted);
+        font-family: var(--mono);
+        font-size: 12px;
+        overflow: auto;
+        max-height: 360px;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      .hint { margin: -4px 0 12px; color: var(--fg-muted); font-size: 12px; }
+      .error { color: var(--danger); font-size: 13px; margin-top: 12px; overflow-wrap: anywhere; }
+      .empty { color: var(--fg-muted); font-size: 13px; margin: 0; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>GitHub MCP Server</h1>
+      <p class="sub">
+        Talking to the real server over Streamable HTTP at <code>/mcp</code> (proxied to the Go
+        process). Nothing here is mocked.
+      </p>
+      <span id="status" class="pill">connecting…</span>
+    </header>
+
+    <main>
+      <section class="card">
+        <h2>Handshake</h2>
+        <dl id="server-info">
+          <dt>status</dt>
+          <dd>waiting…</dd>
+        </dl>
+      </section>
+
+      <section class="card">
+        <h2>OAuth protected resource</h2>
+        <pre id="metadata">…</pre>
+      </section>
+
+      <section class="card">
+        <h2>Tools <span id="tool-count" class="count"></span></h2>
+        <input id="tool-filter" type="text" placeholder="Filter tools by name or description" />
+        <ul id="tools" class="list"></ul>
+        <p id="tools-empty" class="empty">No tools yet.</p>
+      </section>
+
+      <section class="card">
+        <h2>Resources <span id="resource-count" class="count"></span></h2>
+        <ul id="resources" class="list"></ul>
+        <p id="resources-empty" class="empty">No resources reported.</p>
+      </section>
+
+      <section class="card">
+        <h2>Call a tool</h2>
+        <label>
+          GitHub token (optional — kept in this browser tab only)
+          <input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="ghp_… or github_pat_…" />
+        </label>
+        <p class="hint">
+          The handshake, tool listing and resources work without a token. Calling a tool that reads
+          GitHub (<code>get_me</code>, <code>list_issues</code>, …) needs a personal access token.
+        </p>
+        <label>
+          Tool
+          <select id="tool-select"></select>
+        </label>
+        <label>
+          Arguments (JSON)
+          <textarea id="args" rows="4" spellcheck="false">{}</textarea>
+        </label>
+        <button id="run" type="button">Run tool</button>
+        <div id="run-error" class="error" hidden></div>
+        <pre id="result" hidden></pre>
+      </section>
+    </main>
+
+    <script>
+      const state = {
+        token: "",
+        sessionId: null,
+        protocolVersion: null,
+        nextId: 0,
+        tools: [],
+      };
+
+      const $ = (id) => document.getElementById(id);
+
+      function setStatus(text, kind) {
+        const pill = $("status");
+        pill.textContent = text;
+        pill.className = "pill" + (kind ? " " + kind : "");
+      }
+
+      function showError(message) {
+        const box = $("run-error");
+        box.textContent = message;
+        box.hidden = false;
+      }
+
+      function clearError() {
+        $("run-error").hidden = true;
+      }
+
+      // Sends one JSON-RPC message to /mcp and unwraps the streamable-HTTP
+      // response (SSE `data:` frame or plain JSON body).
+      async function rpc(method, params, opts = {}) {
+        const headers = {
+          "Content-Type": "application/json",
+          Accept: "application/json, text/event-stream",
+          // The server validates the token *shape* before routing, so a
+          // placeholder is needed for the token-less handshake and listing.
+          "Authorization": "Bearer " + (state.token || "ghp_placeholder"),
+          "Mcp-Method": method,
+        };
+        if (opts.toolName) headers["Mcp-Name"] = opts.toolName;
+        if (state.sessionId) headers["Mcp-Session-Id"] = state.sessionId;
+        if (state.protocolVersion) headers["Mcp-Protocol-Version"] = state.protocolVersion;
+
+        const body = { jsonrpc: "2.0", method };
+        if (params) body.params = params;
+        if (!opts.notification) body.id = ++state.nextId;
+
+        const response = await fetch("/mcp", {
+          method: "POST",
+          headers,
+          body: JSON.stringify(body),
+        });
+
+        const sessionId = response.headers.get("Mcp-Session-Id");
+        if (sessionId) state.sessionId = sessionId;
+
+        const text = await response.text();
+        const contentType = response.headers.get("Content-Type") || "";
+        let payload = null;
+
+        if (contentType.includes("text/event-stream")) {
+          for (const line of text.split("\n")) {
+            if (!line.startsWith("data:")) continue;
+            try {
+              payload = JSON.parse(line.slice(5).trim());
+            } catch {
+              /* ignore keep-alive or partial frames */
+            }
+          }
+        } else if (text) {
+          try {
+            payload = JSON.parse(text);
+          } catch {
+            /* non-JSON body handled below */
+          }
+        }
+
+        if (payload && payload.error) {
+          throw new Error(payload.error.message + " (code " + payload.error.code + ")");
+        }
+        if (!response.ok && !payload) {
+          throw new Error("HTTP " + response.status + " " + response.statusText + ": " + text.slice(0, 300));
+        }
+        return payload ? payload.result : null;
+      }
+
+      function renderServerInfo(result) {
+        const info = result.serverInfo || {};
+        const rows = [
+          ["name", info.name || "—"],
+          ["version", info.version || "—"],
+          ["protocol version", result.protocolVersion || "—"],
+          ["session", state.sessionId || "stateless"],
+          ["capabilities", Object.keys(result.capabilities || {}).join(", ") || "—"],
+        ];
+        $("server-info").innerHTML = rows
+          .map(([k, v]) => "<dt>" + k + "</dt><dd><code>" + escapeHtml(String(v)) + "</code></dd>")
+          .join("");
+      }
+
+      function escapeHtml(value) {
+        return value.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+      }
+
+      function renderTools(filter) {
+        const needle = (filter || "").trim().toLowerCase();
+        const matches = state.tools.filter(
+          (tool) =>
+            !needle ||
+            tool.name.toLowerCase().includes(needle) ||
+            (tool.description || "").toLowerCase().includes(needle),
+        );
+        $("tool-count").textContent = "(" + matches.length + (matches.length === state.tools.length ? "" : " of " + state.tools.length) + ")";
+        $("tools").innerHTML = matches
+          .map(
+            (tool) =>
+              '<li><span class="name">' +
+              escapeHtml(tool.name) +
+              '</span><span class="desc">' +
+              escapeHtml(tool.description || "") +
+              "</span></li>",
+          )
+          .join("");
+        $("tools-empty").hidden = matches.length > 0;
+      }
+
+      function renderToolSelect() {
+        $("tool-select").innerHTML = state.tools
+          .map((tool) => '<option value="' + escapeHtml(tool.name) + '">' + escapeHtml(tool.name) + "</option>")
+          .join("");
+        const getMe = state.tools.find((tool) => tool.name === "get_me");
+        if (getMe) $("tool-select").value = "get_me";
+      }
+
+      function renderResources(resources) {
+        $("resource-count").textContent = "(" + resources.length + ")";
+        $("resources").innerHTML = resources
+          .map(
+            (resource) =>
+              '<li><span class="name">' +
+              escapeHtml(resource.uri) +
+              '</span><span class="desc">' +
+              escapeHtml(resource.description || resource.mimeType || "") +
+              "</span></li>",
+          )
+          .join("");
+        $("resources-empty").hidden = resources.length > 0;
+      }
+
+      async function connect() {
+        setStatus("connecting…");
+        try {
+          const init = await rpc("initialize", {
+            protocolVersion: "2025-06-18",
+            capabilities: {},
+            clientInfo: { name: "base44-preview-console", version: "1.0.0" },
+          });
+          state.protocolVersion = init.protocolVersion;
+          renderServerInfo(init);
+
+          await rpc("notifications/initialized", null, { notification: true });
+
+          const tools = await rpc("tools/list", {});
+          state.tools = (tools && tools.tools) || [];
+          renderTools("");
+          renderToolSelect();
+
+          let resources = [];
+          try {
+            const listed = await rpc("resources/list", {});
+            resources = (listed && listed.resources) || [];
+          } catch {
+            resources = [];
+          }
+          renderResources(resources);
+
+          setStatus("connected", "ok");
+        } catch (error) {
+          setStatus("not reachable", "err");
+          $("server-info").innerHTML = "<dt>error</dt><dd>" + escapeHtml(String(error.message || error)) + "</dd>";
+          showError("Handshake failed: " + (error.message || error));
+        }
+      }
+
+      async function loadMetadata() {
+        try {
+          const response = await fetch("/.well-known/oauth-protected-resource");
+          const text = await response.text();
+          try {
+            $("metadata").textContent = JSON.stringify(JSON.parse(text), null, 2);
+          } catch {
+            $("metadata").textContent = text;
+          }
+        } catch (error) {
+          $("metadata").textContent = "unavailable: " + (error.message || error);
+        }
+      }
+
+      function renderToolResult(result) {
+        const parts = [];
+        for (const item of (result && result.content) || []) {
+          if (item.type === "text" && typeof item.text === "string") {
+            let rendered = item.text;
+            try {
+              rendered = JSON.stringify(JSON.parse(item.text), null, 2);
+            } catch {
+              /* plain text stays as-is */
+            }
+            parts.push(rendered);
+          } else {
+            parts.push(JSON.stringify(item, null, 2));
+          }
+        }
+        if (result && result.structuredContent) {
+          parts.push(JSON.stringify(result.structuredContent, null, 2));
+        }
+        const body = parts.join("\n\n") || JSON.stringify(result, null, 2);
+        $("result").textContent = (result && result.isError ? "Tool returned an error:\n\n" : "") + body;
+        $("result").hidden = false;
+      }
+
+      $("run").addEventListener("click", async () => {
+        clearError();
+        $("result").hidden = true;
+        state.token = $("token").value.trim();
+        if (state.token) window.sessionStorage.setItem("github-mcp-token", state.token);
+        else window.sessionStorage.removeItem("github-mcp-token");
+
+        const toolName = $("tool-select").value;
+        if (!toolName) {
+          showError("No tool selected.");
+          return;
+        }
+        let args = {};
+        const raw = $("args").value.trim();
+        if (raw) {
+          try {
+            args = JSON.parse(raw);
+          } catch (error) {
+            showError("Arguments must be valid JSON: " + error.message);
+            return;
+          }
+        }
+
+        $("run").disabled = true;
+        try {
+          const result = await rpc("tools/call", { name: toolName, arguments: args }, { toolName });
+          renderToolResult(result);
+        } catch (error) {
+          showError(error.message || String(error));
+        } finally {
+          $("run").disabled = false;
+        }
+      });
+
+      $("tool-filter").addEventListener("input", (event) => renderTools(event.target.value));
+
+      $("token").value = window.sessionStorage.getItem("github-mcp-token") || "";
+      loadMetadata();
+      connect();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,24 @@
+# air (https://github.com/air-verse/air) live-reload config used by the Base44
+# sandbox compose stack. Rebuilds and restarts `github-mcp-server http` whenever
+# a Go source file changes. See dev/preview/README.md.
+root = "."
+tmp_dir = "/tmp/air"
+
+[build]
+  # Same build metadata the repo's Dockerfile passes, so the MCP handshake
+  # reports a real version/commit instead of the linker defaults.
+  cmd = "go build -ldflags \"-X main.version=dev -X main.commit=$(git rev-parse --short HEAD 2>/dev/null || echo dev)\" -o /tmp/air/github-mcp-server ./cmd/github-mcp-server"
+  entrypoint = ["/tmp/air/github-mcp-server", "http", "--port", "8082", "--listen-host", "0.0.0.0"]
+  include_ext = ["go"]
+  exclude_dir = ["ui", "dev", "docs", "e2e", "third-party", "script", ".git", "vendor", "conformance-report"]
+  exclude_regex = ["_test\\.go"]
+  delay = 500
+  poll = true
+  poll_interval = 1000
+  kill_delay = "1s"
+  # Keep the previous binary serving if a change does not compile, so the
+  # preview stays up while a build error is fixed.
+  stop_on_error = false
+
+[misc]
+  clean_on_exit = true
