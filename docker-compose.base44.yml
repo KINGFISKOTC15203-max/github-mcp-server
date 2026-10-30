@@ -1,0 +1,87 @@
+# Base44 sandbox stack: runs this repository from source for the live preview.
+#
+# Run from the repository root:
+#   docker compose -f docker-compose.base44.yml up -d --build
+#
+# Ports
+#   3000 -> preview console (dev/preview/index.html), proxies /mcp to the API
+#   8000 -> the Go MCP server's Streamable HTTP endpoint (for real MCP clients)
+name: github-mcp-server
+
+services:
+  # Builds the MCP App UI bundles in ui/ into pkg/github/ui_dist/, which the Go
+  # binary embeds (go:embed) when it is compiled. Runs once per boot.
+  ui-build:
+    image: node:26-alpine
+    working_dir: /src/ui
+    environment:
+      - npm_config_fund=false
+      - npm_config_audit=false
+    volumes:
+      - ./:/src
+    command: ["sh", "-ec", "npm ci --no-fund --no-audit && exec npm run build"]
+
+  api:
+    build:
+      context: .
+      dockerfile: dev/preview/go-dev.Dockerfile
+    working_dir: /src
+    environment:
+      - CGO_ENABLED=0
+      - GOFLAGS=-mod=mod
+      - BASE44_PREVIEW_MODE
+    volumes:
+      - ./:/src
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+    command: ["sh", "-ec", "go mod download && exec air -c dev/preview/air.toml"]
+    ports:
+      - "8000:8082"
+    depends_on:
+      ui-build:
+        condition: service_completed_successfully
+    healthcheck:
+      # Unauthenticated OAuth protected-resource metadata: proves the HTTP
+      # server is accepting requests (the MCP routes require a bearer token).
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8082/.well-known/oauth-protected-resource || { echo 'api: mcp http server not answering'; exit 1; }"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 120s
+    restart: on-failure
+    labels:
+      base44.project: GitHub MCP Server (API)
+      base44.kind: api
+      base44.port: "8000"
+
+  web:
+    image: nginx:alpine
+    volumes:
+      - ./dev/preview/index.html:/usr/share/nginx/html/index.html:ro
+      - ./dev/preview/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          wget -q -O /dev/null http://127.0.0.1:3000/ ||
+          { echo 'web: preview console not serving'; exit 1; };
+          wget -q -O /dev/null http://127.0.0.1:3000/.well-known/oauth-protected-resource ||
+          { echo 'web: /mcp proxy to api failed'; exit 1; }
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    restart: on-failure
+    labels:
+      base44.project: GitHub MCP Server (Preview)
+      base44.kind: web
+      base44.port: "3000"
+
+volumes:
+  go-mod-cache:
+  go-build-cache:
